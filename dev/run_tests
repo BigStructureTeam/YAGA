@@ -6,5 +6,5 @@ PYTHONPATH=$SPARK_HOME/python/:$PYTHONPATH
 
 # Test
 #pep8 --first `find yaga -name "*.py"` &&\ -> We don't need all best practices, do we ? XD
-python tests/test_handle_geodata.py &&\
-python setup.py build
+python tests/test_handle_geodata.py #&&\
+#python setup.py build
