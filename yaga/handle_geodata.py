@@ -60,7 +60,7 @@ def regionFilter(point):
 # Can be used in map(func)
 def zoneFinder(point):
 	"""
-	Return 2 zones containing the coordinates (a little one and a big one) of a mobile phone event or nothing if it's outside our general area
+	Return 2 zones containing the coordinates (a little one and a big one) of a mobile phone event
 	Boundaries of our map : 
 	N: 45.84 degree, S: 45.73 degree, O: 4.68 degree, E: 4.83 degree, with an NS range of 0.11 degree and an EO range of 0.15 degree.
 	In total we have 165 "big" squares of 0.01 degree , and  4*165=660 "little" ones of 0.005 degree 

@@ -97,5 +97,26 @@ class HandlingGeoDataTestCase(unittest.TestCase):
 		point = {'latitude': 45.836, 'longitude': 4.686}
 		self.assertEqual(yaga.handle_geodata.zoneFinder(point) ,{'bigzone': 1, 'littlezone': 2})
 
+	# point located at the north ouest of the NO limit
+	def test_regionFilter_out_no(self):
+		point = {'latitude': 45.825, 'longitude': 4.675}
+		self.assertFalse(yaga.handle_geodata.regionFilter(point))
+
+	# point located at the north east of the NE limit
+	def test_regionFilter_out_ne(self):
+		point = {'latitude': 45.825, 'longitude': 4.835}
+		self.assertFalse(yaga.handle_geodata.regionFilter(point))
+
+	# point located at the south ouest of the SO limit
+	def test_regionFilter_out_so(self):
+		point = {'latitude': 45.836, 'longitude': 4.686}
+		self.assertFalse(yaga.handle_geodata.regionFilter(point))
+
+	# point located at the south ouest of the SE limit
+	def test_regionFilter_out_se(self):
+		point = {'latitude': 45.725, 'longitude': 4.835}
+		self.assertFalse(yaga.handle_geodata.regionFilter(point))
+
+
 if __name__=='__main__':
 	unittest.main()
