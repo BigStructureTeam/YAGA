@@ -85,8 +85,17 @@ class HandlingGeoDataTestCase(unittest.TestCase):
 	def test_isTimestampValid_goodInput_same_minute_year_ahead(self):
 		current_timestamp = time.time()
 		self.assertFalse(yaga.handle_geodata.isTimestampValid(current_timestamp+3600*24*365, current_timestamp))
-		
+	
+	# point located in zone 1 in both cases
+	def test_zoneFinder_zone1(self):
+		point = {'latitude': 45.836, 'longitude': 4.681}
+		self.assertEqual(yaga.handle_geodata.zoneFinder(point) ,{'bigzone': 1, 'littlezone': 1})
 
+
+	# point located in zone 1 in the big and zone 2 in the little
+	def test_zoneFinder_zone1_zone2(self):
+		point = {'latitude': 45.836, 'longitude': 4.686}
+		self.assertEqual(yaga.handle_geodata.zoneFinder(point) ,{'bigzone': 1, 'littlezone': 2})
 
 if __name__=='__main__':
 	unittest.main()
