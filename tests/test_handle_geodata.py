@@ -20,7 +20,7 @@ class HandlingGeoDataTestCase(unittest.TestCase):
 	# If the event occured at the current minute, we consider it
 	def test_isTimestampValid_goodInput_same_minute(self):
 		current_timestamp = time.time()
-		self.assertFalse(yaga.handle_geodata.isTimestampValid(current_timestamp,current_timestamp))
+		self.assertTrue(yaga.handle_geodata.isTimestampValid(current_timestamp,current_timestamp))
 		
 	# If the event occured one minute ago, we don't consider it
 	def test_isTimestampValid_goodInput_minute_before(self):

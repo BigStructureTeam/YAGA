@@ -5,7 +5,7 @@ from pyspark.sql import SparkSession
 import math
 
 # Create a local StreamingContext with two working thread and batch interval of 1 second
-# sc = SparkContext("local[2]", "HandleGeoData")
+sc = SparkContext("local[2]", "HandleGeoData")
 sparksession = SparkSession.builder.getOrCreate()
 #spark = SparkSession.builder.master("local").appName("Word Count").config("spark.some.config.option", "some-value").getOrCreate()
 #ssc = StreamingContext(sc, 1)
@@ -20,12 +20,13 @@ def isTimestampValid(timestamp, current_timestamp):
 	@param current_timestamp current timestamp of the server (unix timestamp) 
 	Returns boolean
 	"""
-	if (not isinstance(timestamp, int) or not isinstance(current_timestamp, int)):
+	if (not isinstance(timestamp, float) or not isinstance(current_timestamp, float)):
 		return False
 	current_time  = sparksession.createDataFrame([(current_timestamp,)], ['timestamp'])
 	current_time = current_time.withColumn('timestamp',current_time.timestamp.cast("timestamp"))
 	current_minute = current_time.select(psf.minute('timestamp').alias('minute')).collect()
 	current_hour = current_time.select(psf.hour('timestamp').alias('hour')).collect()
+	current_day = current_time.select(psf.dayofmonth('timestamp').alias('day')).collect()
 	current_month = current_time.select(psf.month('timestamp').alias('month')).collect()
 	current_year = current_time.select(psf.year('timestamp').alias('year')).collect()
 
@@ -33,11 +34,12 @@ def isTimestampValid(timestamp, current_timestamp):
 	event_time = event_time.withColumn('timestamp', event_time.timestamp.cast("timestamp"))
 	event_minute = event_time.select(psf.minute('timestamp').alias('minute')).collect()
 	event_hour = event_time.select(psf.hour('timestamp').alias('hour')).collect()
+	event_day = event_time.select(psf.dayofmonth('timestamp').alias('day')).collect()
 	event_month = event_time.select(psf.month('timestamp').alias('month')).collect()
 	event_year = event_time.select(psf.year('timestamp').alias('year')).collect()
 
 
-	return current_minute ==  event_minute and current_hour == event_hour and current_month == event_month and current_year == event_year
+	return current_minute ==  event_minute and current_hour == event_hour and current_day == event_day  and current_month == event_month and current_year == event_year
 
 
 # first element is NO, second is SE
@@ -103,19 +105,20 @@ def zoneFinder(point):
 
 
 
-#def handlePhoneEvent():
-	"""
-	Feed the DictCount and DictSeen dictionnaries
+# def handlePhoneEvent(point):
+# 	"""
+# 	Feed the DictCount and DictSeen dictionnaries
 
-	DictSeen
-	<timestamp, <#tel, [idZone1, idZone2]>> 
-	DictCount
-	<timestamp, <idZone, count>>
-	"""
-	# # We verify if the point is in our map, else we reject it
-	# point = [{'latitude': latitude, 'longitude': longitude}]
-	# dfpoint = sparksession.createDataFrame(point)
-	# filter(regionFilter(point)).
+# 	DictSeen
+# 	<timestamp, <#tel, [idZone1, idZone2]>> 
+# 	DictCount
+# 	<timestamp, <idZone, count>>
+# 	"""
+# 	# # We verify if the point is in our map, else we reject it
+# 	# point = [{'latitude': latitude, 'longitude': longitude}]
+# 	# dfpoint = sparksession.createDataFrame(point)
+# 	# filter(regionFilter(point)).
+# 	sc.parallelize(point)
 
 
 
