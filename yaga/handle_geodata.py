@@ -3,23 +3,30 @@ from pyspark.streaming import StreamingContext
 from pyspark.sql import functions as psf
 from pyspark.sql import SparkSession
 import math
+from pyspark.streaming.kafka import KafkaUtils
+import json
+import time
+import copy
 
 # Create a local StreamingContext with two working thread and batch interval of 1 second
-sc = SparkContext("local[2]", "HandleGeoData")
+sc = SparkContext(appName = "HandleGeoData")
 sparksession = SparkSession.builder.getOrCreate()
 #spark = SparkSession.builder.master("local").appName("Word Count").config("spark.some.config.option", "some-value").getOrCreate()
-#ssc = StreamingContext(sc, 1)
+ssc = StreamingContext(sc, 1)
 
 
 
 # Can be used in filter(func)
-def isTimestampValid(timestamp, current_timestamp):
+def isTimestampValid(timestamp):
 	""" 
 	Verifies if the timestamp of the event received is within the current minute (on the server) 
 	@param timestamp timestamp of the event received (unix timestamp ) 
 	@param current_timestamp current timestamp of the server (unix timestamp) 
 	Returns boolean
 	"""
+	current_timestamp = time.time()
+
+
 	if (not isinstance(timestamp, float) or not isinstance(current_timestamp, float)):
 		return False
 	current_time  = sparksession.createDataFrame([(current_timestamp,)], ['timestamp'])
@@ -30,7 +37,8 @@ def isTimestampValid(timestamp, current_timestamp):
 	current_month = current_time.select(psf.month('timestamp').alias('month')).collect()
 	current_year = current_time.select(psf.year('timestamp').alias('year')).collect()
 
-	event_time = sparksession.createDataFrame([(timestamp,)], ['timestamp'])
+	timestamp_copy = copy.deepcopy(timestamp)
+	event_time = sparksession.createDataFrame([(timestamp_copy,)], ['timestamp']) # problem here
 	event_time = event_time.withColumn('timestamp', event_time.timestamp.cast("timestamp"))
 	event_minute = event_time.select(psf.minute('timestamp').alias('minute')).collect()
 	event_hour = event_time.select(psf.hour('timestamp').alias('hour')).collect()
@@ -38,7 +46,7 @@ def isTimestampValid(timestamp, current_timestamp):
 	event_month = event_time.select(psf.month('timestamp').alias('month')).collect()
 	event_year = event_time.select(psf.year('timestamp').alias('year')).collect()
 
-
+	# return False
 	return current_minute ==  event_minute and current_hour == event_hour and current_day == event_day  and current_month == event_month and current_year == event_year
 
 
@@ -55,7 +63,7 @@ def regionFilter(point):
 	@param point dataframe of format [{'latitude': latitude, 'longitude': longitude}]
 	Return boolean
 	"""
-	if point['latitude'] or point['longitude']:
+	if (not isinstance(point['latitude'], float) or not isinstance(point['longitude'], float)):
 		return False
 	return point['latitude'] <= boundariesdf[0]['latitude'] and point['latitude'] >= boundariesdf[1]['latitude'] and point['longitude'] >= boundariesdf[0]['longitude'] and point['longitude'] <= boundariesdf[1]['longitude']
 
@@ -103,9 +111,16 @@ def zoneFinder(point):
 
 	return {'bigzone': math.floor(zoneBig)+1, 'littlezone': math.floor(zoneLittle)+1}
 
+def popo(a):
+	a = json.loads(a)
+	return a["data"]["timestamp"]==0
 
+def isTimestampValidJSON(a):
+	a = json.loads(a)
+	b = a["data"]["timestamp"]
+	return isTimestampValid(b)
 
-# def handlePhoneEvent(point):
+def handlePhoneEvents():
 # 	"""
 # 	Feed the DictCount and DictSeen dictionnaries
 
@@ -114,17 +129,21 @@ def zoneFinder(point):
 # 	DictCount
 # 	<timestamp, <idZone, count>>
 # 	"""
-# 	# # We verify if the point is in our map, else we reject it
-# 	# point = [{'latitude': latitude, 'longitude': longitude}]
-# 	# dfpoint = sparksession.createDataFrame(point)
-# 	# filter(regionFilter(point)).
-# 	sc.parallelize(point)
+
+	# Here we receive the data from kafka
+	# In the Kafka parameters, you must specify either metadata.broker.list or bootstrap.servers. By default, it will start consuming from the latest offset of each Kafka partition. 
+	# If you set configuration auto.offset.reset in Kafka parameters to smallest, then it will start consuming from the smallest offset.
+	directKafkaStream = KafkaUtils.createDirectStream(ssc, ['geodata'], {"bootstrap.servers": 'localhost:9092'}) 
+	# decode json data from string
+	parsedStream = directKafkaStream.map(lambda (key, value): json.loads(value))
+	#stream = parsedStream.filter(lambda json: isTimestampValidJSON(json))
+	#parsedStream.filter(lambda json: regionFilter(json["data"]))
+	#zonedPoints = parsedStream.map(lambda json: zoneFinder(copy.deepcopy(json)))
+	parsedStream.pprint()
 
 
+if __name__ == "__main__":
 
-
-
-# Create a DStream that will connect to hostname:port, like localhost:9999
-#lines = ssc.socketTextStream("localhost", 9999)
-#ssc.start()             # Start the computation
-#ssc.awaitTermination()  # Wait for the computation to terminate
+	handlePhoneEvents()
+	ssc.start()             # Start the computation
+	ssc.awaitTermination()  # Wait for the computation to terminate
