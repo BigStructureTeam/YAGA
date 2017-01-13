@@ -25,7 +25,9 @@ def isTimestampValid(timestamp):
 	Returns boolean
 	"""
 	current_timestamp = time.time()
+	timestamp = json.loads(timestamp)
 
+	print(timestamp)
 
 	if (not isinstance(timestamp, float) or not isinstance(current_timestamp, float)):
 		return False
@@ -79,6 +81,8 @@ def zoneFinder(point):
 	@param
 	Return {'bigzone': , 'littlezone': }
 	"""
+	point = json.loads(point)
+	point = point["data"]
 
 	nbColumnLatitudeBig = (boundaries[0]['latitude'] - boundaries[1]['latitude']) / bigSquareSize #  11
 	nbColumnLongitudeBig = (boundaries[1]['longitude'] - boundaries[0]['longitude']) / bigSquareSize # 15
@@ -86,9 +90,7 @@ def zoneFinder(point):
 
 	nbColumnLatitudeLittle = (boundaries[0]['latitude'] - boundaries[1]['latitude']) / littleSquareSize # 22
 	nbColumnLongitudeLittle = (boundaries[1]['longitude'] - boundaries[0]['longitude']) / littleSquareSize # 30
-
-
-
+	
 
 	columnLongBigDiff = abs(point['longitude'] - boundaries[0]['longitude'] ) 
 	if bigSquareSize>columnLongBigDiff:
@@ -111,13 +113,12 @@ def zoneFinder(point):
 
 	return {'bigzone': math.floor(zoneBig)+1, 'littlezone': math.floor(zoneLittle)+1}
 
-def popo(a):
-	a = json.loads(a)
-	return a["data"]["timestamp"]==0
-
 def isTimestampValidJSON(a):
 	a = json.loads(a)
+	print(a)
 	b = a["data"]["timestamp"]
+
+
 	return isTimestampValid(b)
 
 def handlePhoneEvents():
@@ -136,10 +137,13 @@ def handlePhoneEvents():
 	directKafkaStream = KafkaUtils.createDirectStream(ssc, ['geodata'], {"bootstrap.servers": 'localhost:9092'}) 
 	# decode json data from string
 	parsedStream = directKafkaStream.map(lambda (key, value): json.loads(value))
-	#stream = parsedStream.filter(lambda json: isTimestampValidJSON(json))
+	parsedStream.filter(lambda json: isTimestampValidJSON(json)) # we don't know what to do here => if we don't assign parsedStream,
+	# the filter is not executed. If we do it, se get  PicklingError: Could not serialize object: Py4JError: Method __getnewargs__([]) does not exist 
+	
 	#parsedStream.filter(lambda json: regionFilter(json["data"]))
-	#zonedPoints = parsedStream.map(lambda json: zoneFinder(copy.deepcopy(json)))
-	parsedStream.pprint()
+	#parsedStream.pprint()
+	zonedPoints = parsedStream.map(lambda json: zoneFinder(copy.deepcopy(json)))
+	zonedPoints.pprint()
 
 
 if __name__ == "__main__":
