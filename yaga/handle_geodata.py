@@ -7,69 +7,70 @@ from pyspark.streaming.kafka import KafkaUtils
 import json
 import time
 import copy
+from pyspark.sql.context import SQLContext
+import datetime
 
 # Create a local StreamingContext with two working thread and batch interval of 1 second
 sc = SparkContext(appName = "HandleGeoData")
-sparksession = SparkSession.builder.getOrCreate()
+#sparksession = SparkSession.builder.getOrCreate()
 #spark = SparkSession.builder.master("local").appName("Word Count").config("spark.some.config.option", "some-value").getOrCreate()
-ssc = StreamingContext(sc, 1)
+ssc = StreamingContext(sc, 60)
 
 
 
 # Can be used in filter(func)
-def isTimestampValid(timestamp):
+def isTimestampValid(inputStream):
 	""" 
 	Verifies if the timestamp of the event received is within the current minute (on the server) 
 	@param timestamp timestamp of the event received (unix timestamp ) 
 	@param current_timestamp current timestamp of the server (unix timestamp) 
 	Returns boolean
 	"""
-	current_timestamp = time.time()
-	timestamp = json.loads(timestamp)
 
-	print(timestamp)
+	timestamp = json.loads(inputStream)
+	timestamp = timestamp["data"]["timestamp"]
+
+	current_timestamp = time.time()
 
 	if (not isinstance(timestamp, float) or not isinstance(current_timestamp, float)):
 		return False
-	current_time  = sparksession.createDataFrame([(current_timestamp,)], ['timestamp'])
-	current_time = current_time.withColumn('timestamp',current_time.timestamp.cast("timestamp"))
-	current_minute = current_time.select(psf.minute('timestamp').alias('minute')).collect()
-	current_hour = current_time.select(psf.hour('timestamp').alias('hour')).collect()
-	current_day = current_time.select(psf.dayofmonth('timestamp').alias('day')).collect()
-	current_month = current_time.select(psf.month('timestamp').alias('month')).collect()
-	current_year = current_time.select(psf.year('timestamp').alias('year')).collect()
 
-	timestamp_copy = copy.deepcopy(timestamp)
-	event_time = sparksession.createDataFrame([(timestamp_copy,)], ['timestamp']) # problem here
-	event_time = event_time.withColumn('timestamp', event_time.timestamp.cast("timestamp"))
-	event_minute = event_time.select(psf.minute('timestamp').alias('minute')).collect()
-	event_hour = event_time.select(psf.hour('timestamp').alias('hour')).collect()
-	event_day = event_time.select(psf.dayofmonth('timestamp').alias('day')).collect()
-	event_month = event_time.select(psf.month('timestamp').alias('month')).collect()
-	event_year = event_time.select(psf.year('timestamp').alias('year')).collect()
 
-	# return False
-	return current_minute ==  event_minute and current_hour == event_hour and current_day == event_day  and current_month == event_month and current_year == event_year
+	delta_current = datetime.timedelta(abs(current_timestamp-timestamp))
+
+	return delta_current.days == 0 and delta_current.seconds < 60
 
 
 # first element is NO, second is SE
 boundaries = [{'latitude': 45.840, 'longitude': 4.680}, {'latitude': 45.730, 'longitude': 4.830}]
-#boundariesdf = sparksession.createDataFrame([(boundaries,)], ['latitude','longitude'])
 bigSquareSize = 0.01
 littleSquareSize = 0.005
 
+def regionFilterJSON(point):
+
+	return not regionFilter(point)
+
+
 # Can be used in filter(func)
-def regionFilter(point):
+def regionFilter(inputStream):
 	"""
 	Verifies if the point given is in the region we defined
 	@param point dataframe of format [{'latitude': latitude, 'longitude': longitude}]
 	Return boolean
 	"""
+	point = json.loads(inputStream)
+	point = point["data"]
+
 	if (not isinstance(point['latitude'], float) or not isinstance(point['longitude'], float)):
 		return False
-	return point['latitude'] <= boundariesdf[0]['latitude'] and point['latitude'] >= boundariesdf[1]['latitude'] and point['longitude'] >= boundariesdf[0]['longitude'] and point['longitude'] <= boundariesdf[1]['longitude']
+	return point['latitude'] <= boundaries[0]['latitude'] and point['latitude'] >= boundaries[1]['latitude'] and point['longitude'] >= boundaries[0]['longitude'] and point['longitude'] <= boundaries[1]['longitude']
 
 # Can be used in map(func)
+def zoneFinderJSON(point):
+	point = json.loads(point)
+	point = point["data"]
+	return zoneFinder(point) 
+
 def zoneFinder(point):
 	"""
 	Return 2 zones containing the coordinates (a little one and a big one) of a mobile phone event
@@ -81,8 +82,7 @@ def zoneFinder(point):
 	@param
 	Return {'bigzone': , 'littlezone': }
 	"""
-	point = json.loads(point)
-	point = point["data"]
+	data = json.loads(point)["data"]
 
 	nbColumnLatitudeBig = (boundaries[0]['latitude'] - boundaries[1]['latitude']) / bigSquareSize #  11
 	nbColumnLongitudeBig = (boundaries[1]['longitude'] - boundaries[0]['longitude']) / bigSquareSize # 15
@@ -92,34 +92,58 @@ def zoneFinder(point):
 	nbColumnLongitudeLittle = (boundaries[1]['longitude'] - boundaries[0]['longitude']) / littleSquareSize # 30
 	
 
-	columnLongBigDiff = abs(point['longitude'] - boundaries[0]['longitude'] ) 
+	columnLongBigDiff = abs(data['longitude'] - boundaries[0]['longitude'] ) 
 	if bigSquareSize>columnLongBigDiff:
 		columnLongBigDiff = 0
-	columnLatBigDiff = abs(boundaries[0]['latitude'] - point['latitude']) 
+	columnLatBigDiff = abs(boundaries[0]['latitude'] - data['latitude']) 
 	if bigSquareSize>columnLatBigDiff:
 		columnLatBigDiff = 0
 	zoneBig  = columnLatBigDiff/bigSquareSize * nbColumnLongitudeBig + columnLongBigDiff/bigSquareSize
 
 
 
-	columnLongLittleDiff = abs(point['longitude'] - boundaries[0]['longitude'] ) 
+	columnLongLittleDiff = abs(data['longitude'] - boundaries[0]['longitude'] ) 
 	if littleSquareSize>columnLongLittleDiff:
 		columnLongLittleDiff = 0
-	columnLatLittleDiff = abs(boundaries[0]['latitude'] - point['latitude']) 
+	columnLatLittleDiff = abs(boundaries[0]['latitude'] - data['latitude']) 
 	if littleSquareSize>columnLatLittleDiff:
 		columnLatLittleDiff = 0
 	zoneLittle  = columnLatLittleDiff/bigSquareSize * nbColumnLongitudeLittle + columnLongLittleDiff/littleSquareSize
 
+	data["zones"] = {'bigzone': math.floor(zoneBig)+1, 'littlezone': math.floor(zoneLittle)+1}
 
-	return {'bigzone': math.floor(zoneBig)+1, 'littlezone': math.floor(zoneLittle)+1}
+	#return ("B"+str(math.floor(zoneBig)+1), "L"+str(math.floor(zoneLittle)+1))
+	print data
+	return data
 
-def isTimestampValidJSON(a):
-	a = json.loads(a)
-	print(a)
-	b = a["data"]["timestamp"]
+# def zoneToCoord(zone, squareSize):
+	
+# 	latitude = zone % 11 * squareSize
+# 	longitude = 
+# 	return (longitude,latitude)
+
+def streamToKeyValue(inputStream):
+	"""
+	Returns (# telephone, zone)
+	"""
+	inputStreamJSON = json.loads(inputStream)
 
 
-	return isTimestampValid(b)
+	return (inputStreamJSON["metadata"]["msisdn"], inputStreamJSON["zones"])
+
+def reduceByTelAndZone(element, elementNext):
+	elementJSON = json.loads(element)
+	elementNextJSON = json.loads(elementNext)
+
+	if elementJSON["metadata"]["msisdn"] == elementNextJSON["metadata"]["msisdn"] and elementJSON["zones"]["littlezone"] == elementNextJSON["zones"]["littlezone"]:
+		return elementNextJSON
+
+
+
+def isTimestampValidJSON(inputStream):
+
+	return not isTimestampValid(inputStream)
+	# return False
 
 def handlePhoneEvents():
 # 	"""
@@ -134,17 +158,19 @@ def handlePhoneEvents():
 	# Here we receive the data from kafka
 	# In the Kafka parameters, you must specify either metadata.broker.list or bootstrap.servers. By default, it will start consuming from the latest offset of each Kafka partition. 
 	# If you set configuration auto.offset.reset in Kafka parameters to smallest, then it will start consuming from the smallest offset.
-	directKafkaStream = KafkaUtils.createDirectStream(ssc, ['geodata'], {"bootstrap.servers": 'localhost:9092'}) 
+	directKafkaStream = KafkaUtils.createDirectStream(ssc, ['geodata-6'], {"bootstrap.servers": 'localhost:9092'})  # 172.31.253.60 or localhost
 	# decode json data from string
-	parsedStream = directKafkaStream.map(lambda (key, value): json.loads(value))
-	parsedStream.filter(lambda json: isTimestampValidJSON(json)) # we don't know what to do here => if we don't assign parsedStream,
-	# the filter is not executed. If we do it, se get  PicklingError: Could not serialize object: Py4JError: Method __getnewargs__([]) does not exist 
-	
-	#parsedStream.filter(lambda json: regionFilter(json["data"]))
-	#parsedStream.pprint()
-	zonedPoints = parsedStream.map(lambda json: zoneFinder(copy.deepcopy(json)))
-	zonedPoints.pprint()
+	parsedStream = directKafkaStream.map(lambda (key, value): json.loads(value)) # after that operation it's a regular Dstream
+	timeFilteredStream = parsedStream.filter(isTimestampValidJSON) 
+	regionFilteredStreamed = timeFilteredStream.filter(regionFilterJSON)
+	# zonedPoints = regionFilteredStreamed.map(zoneFinder)
+	# zoneCounts = zonedPoints.reduce(reduceByTelAndZone)
 
+
+	# zonedPoints.countByWindow().print()
+
+	# join => for each rdd , phone in same zone at same minute ? delete , if not save and send 
+	regionFilteredStreamed.pprint()
 
 if __name__ == "__main__":
 
