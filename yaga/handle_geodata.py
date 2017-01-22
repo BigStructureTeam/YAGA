@@ -15,7 +15,9 @@ URL = local_url if local else production_url
 
 bigSquareSize = 0.01
 littleSquareSize = 0.005
-boundaries = {"NO":{'latitude': 45.840, 'longitude': 4.680}, "SE":{'latitude': 45.730, 'longitude': 4.830}}
+boundaries = {"NO":{'latitude': 45.840, 'longitude': 4.790}, "SE":{'latitude': 45.690, 'longitude': 4.950}}
+
+# boundaries = {"NO":{'latitude': 45.840, 'longitude': 4.680}, "SE":{'latitude': 45.730, 'longitude': 4.830}}
 nbColumnLatitudeBig = (boundaries["NO"]['latitude'] - boundaries["SE"]['latitude']) / bigSquareSize #  11
 nbColumnLongitudeBig = (boundaries["SE"]['longitude'] - boundaries["NO"]['longitude']) / bigSquareSize # 15
 nbColumnLatitudeLittle = (boundaries["NO"]['latitude'] - boundaries["SE"]['latitude']) / littleSquareSize # 22
@@ -132,7 +134,7 @@ def outputWebSocket(rdd):
 
 
 def outputHttp(rdd):
-	r = requests.post(URL, json.dumps(rdd.collect()))
+	r = requests.post(URL, json = rdd.collect())
 	print(r.text)
 
 def on_websocket_response(*args):
