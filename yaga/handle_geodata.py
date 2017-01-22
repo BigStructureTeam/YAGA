@@ -4,6 +4,14 @@ from pyspark.streaming.kafka import KafkaUtils
 import time
 import math
 import json
+import requests
+from socketIO_client import SocketIO, LoggingNamespace
+
+
+local = True
+production_url = '172.31.253.60/newGeo'
+local_url = 'http://127.0.0.1:3000/newGeo'
+URL = local_url if local else production_url
 
 bigSquareSize = 0.01
 littleSquareSize = 0.005
@@ -20,7 +28,7 @@ def isTimestampValid(inputStream):
 	@param current_timestamp current timestamp of the server (unix timestamp)
 	Returns boolean
 	"""
-	timestamp = json.loads(inputStream)["data"]["timestamp"]
+	timestamp = inputStream["data"]["timestamp"]
 	current_timestamp = time.time()
 	if not isinstance(timestamp, float) or not isinstance(current_timestamp, float):
 		return False
@@ -34,8 +42,8 @@ def filter_region(inputStream):
 	@param point dataframe of format [{'latitude': latitude, 'longitude': longitude}]
 	Return boolean
 	"""
-	point = json.loads(inputStream)
-	point = point["data"]
+	# point = json.loads(inputStream)
+	point = inputStream["data"]
 
 	if not isinstance(point['latitude'], float or not isinstance(point['longitude'], float)):
 		return False
@@ -61,7 +69,7 @@ def find_zone(point):
 	@param
 	Return {'bigzone': , 'littlezone': }
 	"""
-	data = json.loads(point)["data"]
+	data = point["data"]
 
 	columnLongBigDiff = data['longitude'] - boundaries["NO"]['longitude']
 	if bigSquareSize>columnLongBigDiff:
@@ -77,9 +85,9 @@ def find_zone(point):
 	columnLatLittleDiff = boundaries["NO"]['latitude'] - data['latitude']
 	if littleSquareSize>columnLatLittleDiff:
 		columnLatLittleDiff = 0
-	zoneLittle  = columnLatLittleDiff/bigSquareSize * nbColumnLongitudeLittle + columnLongLittleDiff/littleSquareSize
+	zoneLittle  = columnLatLittleDiff/littleSquareSize * nbColumnLongitudeLittle + columnLongLittleDiff/littleSquareSize
 
-	return json.dumps({"zone": math.floor(zoneLittle)+1, "msisdn": json.loads(point)["metadata"]["msisdn"]})
+	return json.dumps({"zone": math.floor(zoneLittle)+1, "msisdn": point["metadata"]["msisdn"]})
     #{'bigzone': math.floor(zoneBig) + 1,
     #return ("B"+str(math.floor(zoneBig)+1), "L"+str(math.floor(zoneLittle)+1))
 # def zoneToCoord(zone, squareSize):
@@ -92,15 +100,48 @@ def streamToKeyValue(inputStream):
 	"""
 	Returns (# telephone, zone)
 	"""
-	inputStreamJSON = json.loads(inputStream)
-	return (inputStreamJSON["metadata"]["msisdn"], inputStreamJSON["zones"])
+	# inputStreamJSON = json.loads(inputStream)
+	return (inputStreamJSON["metadata"]["msisdn"], inputStream["zones"])
 
 def reduceByTelAndZone(element, elementNext):
-	elementJSON = json.loads(element)
-	elementNextJSON = json.loads(elementNext)
+	elementJSON = element
+	elementNextJSON = elementNext
 
 	if elementJSON["metadata"]["msisdn"] == elementNextJSON["metadata"]["msisdn"] and elementJSON["zones"]["littlezone"] == elementNextJSON["zones"]["littlezone"]:
 		return elementNextJSON
+
+
+def outputWebSocket(rdd):
+
+
+  # (rdd, time) =>
+  # rdd.foreachPartition { partitionIterator =>
+  #   val partitionId = TaskContext.get.partitionId()
+  #   val uniqueId = generateUniqueId(time.milliseconds, partitionId)
+  #   // use this uniqueId to transactionally commit the data in partitionIterator
+  # }
+
+# SocketIO(
+#     'localhost', 3000,
+#     headers={'content-type': 'application/json; charset=utf8'})
+
+
+  with SocketIO('localhost', 3000, LoggingNamespace,  headers={'content-type': 'application/json; charset=utf8'}) as socketIO:
+    socketIO.emit(json.dumps(rdd.collect()), on_websocket_response)
+    socketIO.wait_for_callbacks(seconds=1)
+
+
+def outputHttp(rdd):
+	r = requests.post(URL, json.dumps(rdd.collect()))
+	print(r.text)
+
+def on_websocket_response(*args):
+    print('on_bbb_response', args)
+
+
+
+
+	
 
 def handlePhoneEvents():
 # 	"""
@@ -124,7 +165,7 @@ def handlePhoneEvents():
         .map(find_zone)\
         .countByValue()\
         .map(lambda (map, count): (json.loads(map)["zone"],1))\
-        .reduceByKey(lambda x, y: x+ y).pprint()
+        .reduceByKey(lambda x, y: x+ y).foreachRDD(outputHttp)
         #
         # zonedPoints =
         # zoneCounts = zonedPoints.reduce(reduceByTelAndZone)
@@ -133,7 +174,7 @@ def handlePhoneEvents():
         #regionFilteredStreamed.pprint()
 
 
-sc = SparkContext("local[*]",appName = "HandleGeoData")
+sc = SparkContext(appName = "HandleGeoData")
 ssc = StreamingContext(sc, 3)
 
 if __name__ == "__main__":
